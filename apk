@@ -1,0 +1,278 @@
+# BD Bus Simulator PRO 🚌🇧🇩
+A complete, single-file structure containing all the necessary code blocks to create a landscape-locked Android (Java) Bus Simulator game for GitHub.
+
+---
+
+### 1. AndroidManifest.xml (Orientation Configuration)
+This file locks the screen orientation to landscape and enables full-screen mode.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://android.com"
+    package="com.bdbus.simulator">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="BD Bus Simulator PRO"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AppCompat.NoActionBar">
+        
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|keyboardHidden|screenSize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
+```
+
+---
+
+### 2. MainActivity.java (Game Engine Loader)
+This component initializes full-screen configurations and passes the real resolution properties to the gaming surface.
+
+```java
+package com.bdbus.simulator;
+
+import android.graphics.Point;
+import android.os.Bundle;
+import android.view.WindowManager;
+import androidx.appcompat.app.AppCompatActivity;
+
+public class MainActivity extends AppCompatActivity {
+
+    private GameView gameView;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // Enable complete full-screen view mode
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
+        Point point = new Point();
+        getWindowManager().getDefaultDisplay().getSize(point);
+
+        // Load the customized GameView inside structural display dimensions
+        gameView = new GameView(this, point.x, point.y);
+        setContentView(gameView);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        gameView.resume();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        gameView.pause();
+    }
+}
+```
+
+---
+
+### 3. GameView.java (Rendering, Assets Loading & Collision Logic)
+This file contains the main gameplay loop. It renders the custom bus image, tracks movement, sets up Bangladeshi roads/buildings, and triggers the hydraulic horn audio when touched.
+
+```java
+package com.bdbus.simulator;
+
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.media.MediaPlayer;
+import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
+
+import java.util.ArrayList;
+import java.util.Random;
+
+public class GameView extends SurfaceView implements Runnable {
+
+    private Thread gameThread;
+    private boolean isPlaying;
+    private int screenX, screenY;
+    private Paint paint;
+    private SurfaceHolder surfaceHolder;
+
+    // Asset and Media Management Objects
+    private Bitmap busBitmap;
+    private MediaPlayer hornPlayer;
+    private int busX, busY, busSpeed = 18;
+    
+    private ArrayList<BDTraffic> trafficList;
+    private ArrayList<BDBuilding> environmentList;
+    private Random random;
+    private int score = 0;
+
+    public GameView(Context context, int screenX, int screenY) {
+        super(context);
+        this.screenX = screenX;
+        this.screenY = screenY;
+        surfaceHolder = getHolder();
+        paint = new Paint();
+        random = new Random();
+
+        // 1. Loading and scaling the real PNG asset from res/drawable/bd_bus.png
+        Bitmap originalBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.bd_bus);
+        busBitmap = Bitmap.createScaledBitmap(originalBitmap, 160, 90, false);
+
+        // 2. Initializing real hydraulic horn audio from res/raw/hydraulic_horn.mp3
+        hornPlayer = MediaPlayer.create(context, R.raw.hydraulic_horn);
+
+        busX = 100;
+        busY = screenY / 2;
+
+        trafficList = new ArrayList<>();
+        environmentList = new ArrayList<>();
+
+        for (int i = 0; i < 3; i++) {
+            generateTraffic();
+            generateEnvironment();
+        }
+    }
+
+    @Override
+    public void run() {
+        while (isPlaying) {
+            update();
+            draw();
+            control();
+        }
+    }
+
+    private void update() {
+        // Handle incoming Bangladeshi highway traffic calculations
+        for (BDTraffic traffic : trafficList) {
+            traffic.x -= traffic.speed;
+            if (traffic.x < -200) {
+                traffic.x = screenX + random.nextInt(300);
+                traffic.y = random.nextInt(screenY - 250) + 120;
+                traffic.type = random.nextBoolean() ? "Hanif Bus" : "Local Rickshaw";
+                score += 10;
+            }
+
+            // Real-time accident collision calculation boundary
+            if (Math.abs(busX - traffic.x) < 140 && Math.abs(busY - traffic.y) < 60) {
+                score = 0; 
+            }
+        }
+
+        // Side environment scenery movement simulation
+        for (BDBuilding building : environmentList) {
+            building.x -= 10;
+            if (building.x < -300) {
+                building.x = screenX + random.nextInt(300);
+                building.type = random.nextBoolean() ? "Mudir Dokan" : "BD House";
+            }
+        }
+    }
+
+    private void draw() {
+        if (surfaceHolder.getSurface().isValid()) {
+            Canvas canvas = surfaceHolder.lockCanvas();
+
+            // Render Green Fields background & Pitch Dark Highway tarmac
+            canvas.drawColor(Color.parseColor("#27AE60")); 
+            paint.setColor(Color.parseColor("#34495E")); 
+            canvas.drawRect(0, 120, screenX, screenY - 120, paint); 
+
+            // White center-line markings setup
+            paint.setColor(Color.WHITE);
+            for (int i = 0; i < screenX; i += 120) {
+                canvas.drawRect(i, screenY / 2 - 4, i + 60, screenY / 2 + 4, paint);
+            }
+
+            // Drawing roadside structures (Mudir Dokan / BD Village Houses)
+            for (BDBuilding building : environmentList) {
+                if (building.type.equals("Mudir Dokan")) {
+                    paint.setColor(Color.parseColor("#D35400")); 
+                    canvas.drawRect(building.x, 25, building.x + 140, 115, paint);
+                    paint.setColor(Color.WHITE);
+                    paint.setTextSize(22);
+                    canvas.drawText("টং দোকান", building.x + 15, 75, paint);
+                } else {
+                    paint.setColor(Color.parseColor("#7F8C8D")); 
+                    canvas.drawRect(building.x, 15, building.x + 180, 115, paint);
+                    paint.setColor(Color.YELLOW);
+                    canvas.drawText("গ্রামের বাড়ি", building.x + 20, 70, paint);
+                }
+            }
+
+            // 3. Render the customized PNG Bus asset model to screen
+            canvas.drawBitmap(busBitmap, busX, busY, paint);
+
+            // Render random highway road traffic elements
+            for (BDTraffic traffic : trafficList) {
+                if (traffic.type.contains("Bus")) {
+                    paint.setColor(Color.parseColor("#8E44AD")); 
+                    canvas.drawRect(traffic.x, traffic.y, traffic.x + 150, traffic.y + 70, paint);
+                    paint.setColor(Color.WHITE);
+                    paint.setTextSize(20);
+                    canvas.drawText("হানিফ এন্টারপ্রাইজ", traffic.x + 10, traffic.y + 40, paint);
+                } else {
+                    paint.setColor(Color.parseColor("#F1C40F")); 
+                    canvas.drawRect(traffic.x, traffic.y, traffic.x + 70, traffic.y + 55, paint);
+                    paint.setColor(Color.BLACK);
+                    paint.setTextSize(18);
+                    canvas.drawText("রিকশা", traffic.x + 10, traffic.y + 35, paint);
+                }
+            }
+
+            // Display active highway journey metadata UI
+            paint.setColor(Color.WHITE);
+            paint.setTextSize(35);
+            canvas.drawText("Route: Dhaka - Sylhet Highway", 40, 170, paint);
+            canvas.drawText("Score: " + score, screenX - 280, 170, paint);
+
+            surfaceHolder.unlockCanvasAndPost(canvas);
+        }
+    }
+
+    private void control() {
+        try {
+            Thread.sleep(17); // Locks performance at target ~60 FPS rate
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void generateTraffic() {
+        BDTraffic traffic = new BDTraffic();
+        traffic.x = screenX + random.nextInt(400);
+        traffic.y = random.nextInt(screenY - 320) + 140;
+        traffic.speed = random.nextInt(8) + 12;
+        traffic.type = random.nextBoolean() ? "Hanif Bus" : "Local Rickshaw";
+        trafficList.add(traffic);
+    }
+
+    private void generateEnvironment() {
+        BDBuilding building = new BDBuilding();
+        building.x = screenX + random.nextInt(500);
+        building.type = random.nextBoolean() ? "Mudir Dokan" : "BD House";
+        environmentList.add(building);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                // 4. Play hydraulic horn audio on touch interaction window
+                if (hornPlayer != null) {
+                    if (hornPlayer.isPlaying()) {
